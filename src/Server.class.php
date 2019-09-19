@@ -35,19 +35,19 @@ if (!\class_exists("HttpServer\\Server")) {
         throw new Error("Can't create a socket, please verify your admin privileges");
       }
 
-      if (!\is_array($options)) {
-        $options = array();
-      }
+      if (!\is_array($options)) $options = array();
       $address = isset($options["domain"]) ? $options["domain"] : (
         isset($options["host"]) ? $options["host"] : (
           isset($options["address"]) ? $options["address"] : "localhost" ) );
       $port = isset($options["port"]) ? $options["port"] : 80;
+      $inbound = isset($options["inbound"]) ? $options["inbound"] : (
+        isset($options["count"]) ? $options["count"] : 0 );
 
       if (\socket_bind($handler, $address, $port) === false) {
         throw Error::auto($handler);
       }
 
-      if (\socket_listen($handler, 0) === false) {
+      if (\socket_listen($handler, $inbound) === false) {
         throw Error::auto($handler);
       }
 
@@ -81,12 +81,6 @@ if (!\class_exists("HttpServer\\Server")) {
       });
     }
 
-
-    /**
-    * @method call Execute the `$fn` with the socket as parameter.
-    * @return {HttpServer\Server} this instance.
-    * @throws {HttpServer\Error} if `$socket` is not a socket resource.
-    */
 
     private function call($socket) {
       if (!\is_resource($socket)) {

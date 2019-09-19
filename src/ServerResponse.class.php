@@ -92,8 +92,11 @@ if (!\class_exists("HttpServer\\ServerResponse")) {
       try {
         if (!$this->head_done) {
           if (!isset($this->head['Date'])) $this->head['Date'] = date(DATE_RSS);
-          if (!isset($this->head['Content-Type'])) $this->head['Content-Type'] = "text/html; charset=utf-8";
-          if (!isset($this->head['Content-Length'])) $this->head['Content-Length'] = \strlen($this->body);
+          if ($len = \strlen($this->body)) {
+            if (!isset($this->head['Content-Type'])) $this->head['Content-Type'] = "text/plain; charset=utf-8";
+            if (!isset($this->head['Content-Length'])) $this->head['Content-Length'] = $len;
+          }
+          if (!isset($this->head['Transfer-Coding'])) $this->head['Transfer-Coding'] = "identity";
           if (!isset($this->head['Connexion'])) $this->head['Connexion'] = "close";
 
           $chunk = $this->getHeaderToString() . Http::EOL . $this->body;
@@ -108,6 +111,7 @@ if (!\class_exists("HttpServer\\ServerResponse")) {
         $this->body_done = true;
 
         if (\socket_close($this->socket) === false) {
+          echo "ending\n";
           throw Error::auto($this->socket);
         }
       } catch (\Throwable $err) {
@@ -155,6 +159,19 @@ if (!\class_exists("HttpServer\\ServerResponse")) {
 
     function endPromise() {
       return $this->body_prom;
+    }
+
+
+    function abort() {
+      echo "server aborting\n";
+      try {
+        if (\socket_close($this->socket) === false) {
+          throw Error::auto($this->socket);
+        }
+      } catch (\Throwable $err) {
+        throw $this->error = $err;
+      }
+      return $this;
     }
   }
 }

@@ -11,7 +11,8 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
     private $socket, $raw = "", $index = 0, $error = null,
       $request = array(), $request_prom = null, $request_done = false,
       $head = array(), $head_prom = null, $head_done = false,
-      $body_prom = null, $body_done = false;
+      $body_prom = null, $body_done = false,
+      $tempfile = null, $tempfile_handler = null;
 
 
     /**
@@ -30,17 +31,22 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
     private function readRequest() {
       $self = $this;
 
-      $this->head_prom = Promise::async((function () {
-        if ($this->error) throw $this->error;
-        return $this->head_done ? $this->head : false;
-      })->bindTo($this));
-
       $this->request_prom = Promise::async((function () {
         if ($this->error) throw $this->error;
         return $this->request_done ? $this->request : false;
       })->bindTo($this));
 
+      $this->head_prom = Promise::async((function () {
+        if ($this->error) throw $this->error;
+        return $this->head_done ? $this->head : false;
+      })->bindTo($this));
+
       $this->body_prom = Promise::async((function () {
+        if ($this->error) throw $this->error;
+        return $this->body_done ? ($this->raw ? $this->raw : true) : false;
+      })->bindTo($this));
+
+      async((function () {
         if ($this->error) throw $this->error;
 
         try {
@@ -56,6 +62,9 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
           $this->request_done = true;
           $this->head_done = true;
           $this->body_done = true;
+          if (!\is_null($this->tempfile_handler)) {
+            \fclose($this->tempfile_handler);
+          }
           return $this->raw ? $this->raw : true;
         }
       })->bindTo($this));
@@ -92,6 +101,34 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
         }
         $this->raw = \substr($this->raw, $offset);
       }
+
+      if (!\is_null($this->tempfile_handler)) {
+        \fwrite($this->tempfile_handler, $this->raw);
+        $this->raw = "";
+      }
+    }
+
+
+    /**
+     *
+     */
+
+    function insertBodyInTempfile(string $filepath = "") {
+      if (!\strlen($filepath)) {
+        $filepath = tempnam("/tmp", "php-http-async.");
+      }
+      $this->tempfile = $filepath;
+      $this->tempfile_handler = fopen($filepath, "w");
+      return $this;
+    }
+
+
+    /**
+     *
+     */
+
+    function getTempfile() {
+      return $this->tempfile;
     }
 
 
@@ -110,7 +147,10 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
      */
 
     function getHeader(string $field) {
-      return $this->head[Http::toField($field)];
+      if (isset($this->head[Http::toField($field)])) {
+        return $this->head[Http::toField($field)];
+      }
+      return null;
     }
 
 
@@ -152,6 +192,18 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
     function endPromise() {
       return $this->body_prom;
+    }
+
+
+    function abort() {
+      try {
+        if (\socket_close($this->socket) === false) {
+          throw Error::auto($this->socket);
+        }
+      } catch (\Throwable $err) {
+        throw $this->error = $err;
+      }
+      return $this;
     }
   }
 }
