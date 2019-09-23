@@ -86,6 +86,7 @@ if (!\class_exists("HttpServer\\Server")) {
       if (!\is_resource($socket)) {
         throw new Error("First parameter is not a socket");
       }
+      \socket_set_nonblock($socket);
       ($this->fn)(new ClientRequest($socket), new ServerResponse($socket));
       return $this;
     }

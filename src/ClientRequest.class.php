@@ -60,6 +60,7 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
         try {
           if (($chunk = \socket_read($this->socket, self::CHUNK_LENGTH)) === false) {
+            if(\socket_last_error() === 10035) return;
             throw Error::auto($this->socket);
           }
           $this->readChunk($chunk);
@@ -127,7 +128,7 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
     function insertBodyInTempfile (string $filepath = "") {
       if (!\strlen($filepath)) {
-        $filepath = tempnam("/tmp", "php-http-async.");
+        $filepath = tempnam(sys_get_temp_dir(), "php-http-async.");
       }
       $this->tempfile = $filepath;
       $this->tempfile_handler = fopen($filepath, "w");
