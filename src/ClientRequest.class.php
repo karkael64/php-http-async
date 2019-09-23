@@ -8,28 +8,27 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
   class ClientRequest {
 
     const CHUNK_LENGTH = 0xffff;
-    private $socket, $raw = "", $index = 0, $error = null,
-      $request = array(), $request_prom = null, $request_done = false,
-      $head = array(), $head_prom = null, $head_done = false,
-      $body_prom = null, $body_done = false,
+    private
+      $socket, $raw = "", $index = 0, $error = null,
+      $method = "", $url = "", $protocol = "",
+      $request = "",   $request_prom = null, $request_done = false,
+      $head = array(), $head_prom = null,    $head_done = false,
+                       $body_prom = null,    $body_done = false,
       $tempfile = null, $tempfile_handler = null;
 
 
     /**
-     *
+     * @method __construct
+     * @param resource $socket
+     * @return HttpServer\ClientRequest
+     * @throws HttpServer\Error if first parameter is not a socket
      */
 
-    function __construct($socket) {
+    function __construct ($socket) {
       if (!\is_resource($socket)) {
         throw new Error("First parameter is not a socket");
       }
       $this->socket = $socket;
-      $this->readRequest();
-    }
-
-
-    private function readRequest() {
-      $self = $this;
 
       $this->request_prom = Promise::async((function () {
         if ($this->error) throw $this->error;
@@ -41,11 +40,21 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
         return $this->head_done ? $this->head : false;
       })->bindTo($this));
 
-      $this->body_prom = Promise::async((function () {
-        if ($this->error) throw $this->error;
-        return $this->body_done ? ($this->raw ? $this->raw : true) : false;
+      $this->body_prom = new Promise((function ($resolve, $reject) {
+        async((function () {
+          if ($this->error) throw $this->error;
+          return $this->body_done;
+        })->bindTo($this), (function ($err) use ($resolve, $reject) {
+          if ($err) $reject($err);
+          else $resolve($this->raw);
+        })->bindTo($this));
       })->bindTo($this));
 
+      $this->readRequest();
+    }
+
+
+    private function readRequest () {
       async((function () {
         if ($this->error) throw $this->error;
 
@@ -71,12 +80,13 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
     }
 
 
-    private function readChunk($chunk = "") {
+    private function readChunk ($chunk = "") {
       $this->raw .= $chunk;
 
       if (!$this->request_done) {
         if (($pos = \strpos($this->raw, "\n")) !== false) {
           $this->request = \trim(\substr($this->raw, 0, $pos));
+          list($this->method, $this->url, $this->protocol) = \preg_split('/\s+/', $this->request);
           $this->raw = \substr($this->raw, $pos + 1);
           $this->request_done = true;
         } else {
@@ -110,10 +120,12 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
 
     /**
-     *
+     * @method insertBodyInTempfile
+     * @param string $filepath (optional, default=`""`)
+     * @return HttpServer\ClientRequest self instance
      */
 
-    function insertBodyInTempfile(string $filepath = "") {
+    function insertBodyInTempfile (string $filepath = "") {
       if (!\strlen($filepath)) {
         $filepath = tempnam("/tmp", "php-http-async.");
       }
@@ -124,29 +136,34 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
 
     /**
-     *
+     * @method getTempfile
+     * @return string
      */
 
-    function getTempfile() {
+    function getTempfile () {
       return $this->tempfile;
     }
 
 
     /**
-     *
+     * @method getHeaders
+     * @return array
+     * @throws HttpServer\Error if client hasn't sent header yet
      */
 
-    function getHeaders() {
+    function getHeaders () {
       if (!$this->head_done) throw new Error("Client hasn't sent header yet");
       return $this->head;
     }
 
 
     /**
-     *
+     * @method getHeader
+     * @param string $field
+     * @return string|null
      */
 
-    function getHeader(string $field) {
+    function getHeader (string $field) {
       if (isset($this->head[Http::toField($field)])) {
         return $this->head[Http::toField($field)];
       }
@@ -154,48 +171,103 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
     }
 
 
-    function getRequest() {
+    /**
+     * @method getRequest
+     * @return string
+     * @throws HttpServer\Error if client hasn't sent header yet
+     */
+
+    function getRequest () {
       if (!$this->request_done) throw new Error("Client hasn't sent request yet");
       return $this->request;
     }
 
 
-    function getBody() {
+    /**
+     * @method getMethod
+     * @return string
+     * @throws HttpServer\Error if client hasn't sent header yet
+     */
+
+    function getMethod () {
+      if (!$this->request_done) throw new Error("Client hasn't sent request yet");
+      return $this->method;
+    }
+
+
+    /**
+     * @method getUrl
+     * @return string
+     * @throws HttpServer\Error if client hasn't sent header yet
+     */
+
+    function getUrl () {
+      if (!$this->request_done) throw new Error("Client hasn't sent request yet");
+      return $this->url;
+    }
+
+
+    /**
+     * @method getProtocol
+     * @return string
+     * @throws HttpServer\Error if client hasn't sent header yet
+     */
+
+    function getProtocol () {
+      if (!$this->request_done) throw new Error("Client hasn't sent request yet");
+      return $this->protocol;
+    }
+
+
+    /**
+     * @method getBody
+     * @return string
+     * @throws HttpServer\Error if client hasn't sent header yet
+     */
+
+    function getBody () {
       if (!$this->body_done) throw new Error("Client hasn't sent body yet");
       return $this->raw;
     }
 
 
-
-
     /**
-     *
+     * @method requestPromise
+     * @return Async\Promise.<string $request>.<Throwable $err>
      */
 
-    function requestPromise() {
+    function requestPromise () {
       return $this->request_prom;
     }
 
 
     /**
-     *
+     * @method headerPromise
+     * @return Async\Promise.<string $request>.<Throwable $err>
      */
 
-    function headerPromise() {
+    function headerPromise () {
       return $this->head_prom;
     }
 
 
     /**
-     *
+     * @method endPromise
+     * @return Async\Promise.<string $request>.<Throwable $err>
      */
 
-    function endPromise() {
+    function endPromise () {
       return $this->body_prom;
     }
 
 
-    function abort() {
+    /**
+     * @method abort
+     * @return HttpServer\ClientRequest
+     * @throws Throwable if socket can't be closed
+     */
+
+    function abort () {
       try {
         if (\socket_close($this->socket) === false) {
           throw Error::auto($this->socket);

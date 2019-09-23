@@ -111,7 +111,9 @@ if (!\class_exists("HttpServer\\Http")) {
 
 
     /**
-     *
+     * @static createServer
+     * @param Closure $fn
+     * @return HttpServer\Server
      */
 
     static function createServer (\Closure $fn) {
@@ -120,10 +122,12 @@ if (!\class_exists("HttpServer\\Http")) {
 
 
     /**
-     *
+     * @static toField
+     * @param string $field
+     * @return string
      */
 
-    static function toField(string $field) {
+    static function toField (string $field) {
       $result = "";
       $first = true;
       $len = \strlen($field);

@@ -15,23 +15,34 @@ await(function () use ($port) {
   $server = HttpServer\Http::createServer(function ($req, $res) {
 
     // when request phrase is received, then you can prepare resources.
-    $req->requestPromise()->then(function ($phrase) use ($req) {
-      list($method, $url, $protocol) = explode(" ", $phrase);
-      if (!check_method_allowed($method)) $req->abort();
+    $req->requestPromise()->then(function (string $phrase) use ($req) {
+      $method = $req->getMethod();
+      $url = $req->getUrl();
+      $protocol = $req->getProtocol();
+      echo "request recieved: $method $url $protocol\n";
+
+      if (!check_method_allowed($method)) {
+        $req->abort();
+      }
       prepare_resource($url);
     });
 
     // when request headers are received, then you can check body length before loading it.
-    $req->headerPromise()->then(function () use ($req) {
-      $len = $req->getHeader("content-length");
+    $req->headerPromise()->then(function (array $heads) use ($req) {
+      \is_null($len = $req->getHeader("content-length")) and ($len = 0);
+      echo "headers recieved: $len bytes expected\n";
+
       if (!\is_null($len) && $len > 0xfffff) {
         $req->abort();
       }
     });
 
     // when request ends, then you can send response
-    $req->endPromise()->then(function () use ($res) {
-      $res->end("Hello, World!\n");
+    $req->endPromise()->then(function (string $body) use ($res) {
+      $len = \strlen($body);
+      echo "body recieved ($len bytes recieved): " . \json_encode($body) . "\n";
+
+      $res->end();
     });
   });
 

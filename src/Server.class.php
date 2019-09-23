@@ -82,12 +82,11 @@ if (!\class_exists("HttpServer\\Server")) {
     }
 
 
-    private function call($socket) {
+    private function call ($socket) {
       if (!\is_resource($socket)) {
         throw new Error("First parameter is not a socket");
       }
-      $fn = $this->fn;
-      $fn(new ClientRequest($socket), new ServerResponse($socket));
+      ($this->fn)(new ClientRequest($socket), new ServerResponse($socket));
       return $this;
     }
 
@@ -99,7 +98,7 @@ if (!\class_exists("HttpServer\\Server")) {
     * @throws {HttpServer\Error} if server can't be closed.
     */
 
-    function close($then = null) {
+    function close ($then = null) {
       $this->closing = $then instanceof \Closure ? $then : true;
       return $this;
     }
