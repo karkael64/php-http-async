@@ -311,7 +311,7 @@ if (!\class_exists("HttpServer\\ServerResponse")) {
       $lines = array();
 
       $code = $this->code;
-      $phrase = Http::STATUS_CODES[$code];
+      $phrase = Http::STATUS_CODES[$code][Http::KEY_MSG];
       $message = "HTTP/1.1 $code $phrase";
       $lines []= $message;
 
