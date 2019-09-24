@@ -7,7 +7,16 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
   class ClientRequest {
 
-    const CHUNK_LENGTH = 0xffff;
+    const
+      CHUNK_LENGTH = 0xffff,
+      REGEX_REQUEST = '/^([A-Z]+)\\s+(\\/[^\\s]*)\\s+(HTTP\\/\\d+(\\.\\d+)?)$/i';
+
+    const
+      ERR_REQUEST_EMPTY = 1,
+      ERR_REQUEST_MALFORMED = 2,
+      ERR_HEADERS_MALFORMED = 3,
+      ERR_WINDOWS_NONBLOCK = 10035;
+
     private
       $socket, $raw = "", $index = 0, $error = null,
       $method = "", $url = "", $protocol = "",
@@ -34,11 +43,13 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
         if ($this->error) throw $this->error;
         return $this->request_done ? $this->request : false;
       })->bindTo($this));
+      $this->request_prom->catch(function () {});
 
       $this->head_prom = Promise::async((function () {
         if ($this->error) throw $this->error;
         return $this->head_done ? $this->head : false;
       })->bindTo($this));
+      $this->head_prom->catch(function () {});
 
       $this->body_prom = new Promise((function ($resolve, $reject) {
         async((function () {
@@ -49,6 +60,7 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
           else $resolve($this->raw);
         })->bindTo($this));
       })->bindTo($this));
+      $this->body_prom->catch(function () {});
 
       $this->readRequest();
     }
@@ -56,27 +68,25 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
 
     private function readRequest () {
       async((function () {
+
         if ($this->error) throw $this->error;
+        if (($chunk = \socket_read($this->socket, self::CHUNK_LENGTH)) === false) {
+          if(\socket_last_error() === self::ERR_WINDOWS_NONBLOCK) return;
+          throw Error::auto($this->socket);
+        }
+        $this->readChunk($chunk);
+        return (\strlen($chunk) < self::CHUNK_LENGTH);
 
-        try {
-          if (($chunk = \socket_read($this->socket, self::CHUNK_LENGTH)) === false) {
-            if(\socket_last_error() === 10035) return;
-            throw Error::auto($this->socket);
-          }
-          $this->readChunk($chunk);
-        } catch (\Throwable $err) {
-          throw $this->error = $err;
+      })->bindTo($this), (function ($err) {
+        $this->error = $err;
+
+        $this->request_done = true;
+        $this->head_done = true;
+        $this->body_done = true;
+        if (!\is_null($this->tempfile_handler)) {
+          \fclose($this->tempfile_handler);
         }
 
-        if (\strlen($chunk) < self::CHUNK_LENGTH) {
-          $this->request_done = true;
-          $this->head_done = true;
-          $this->body_done = true;
-          if (!\is_null($this->tempfile_handler)) {
-            \fclose($this->tempfile_handler);
-          }
-          return $this->raw ? $this->raw : true;
-        }
       })->bindTo($this));
     }
 
@@ -85,12 +95,22 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
       $this->raw .= $chunk;
 
       if (!$this->request_done) {
-        if (($pos = \strpos($this->raw, "\n")) !== false) {
+        if (!\strlen($this->raw)) {
+          throw $this->error = new Error("Request empty", self::ERR_REQUEST_EMPTY);
+        }
+        elseif (($pos = \strpos($this->raw, "\n")) !== false) {
           $this->request = \trim(\substr($this->raw, 0, $pos));
-          list($this->method, $this->url, $this->protocol) = \preg_split('/\s+/', $this->request);
+          if (!\preg_match_all(self::REGEX_REQUEST, $this->request, $split)) {
+            throw $this->error = new Error("Request is not well formed", self::ERR_REQUEST_MALFORMED);
+          }
+          $this->method = \strtoupper($split[1][0]);
+          $this->url = $split[2][0];
+          $this->protocol = \strtoupper($split[3][0]);
+
           $this->raw = \substr($this->raw, $pos + 1);
           $this->request_done = true;
-        } else {
+        }
+        else {
           return;
         }
       }
@@ -102,10 +122,14 @@ if (!\class_exists("HttpServer\\ClientRequest")) {
           $offset = $pos + 1;
           if (\strlen($line)) {
             $posKey = \strpos($line, ":");
+            if ($posKey === false) {
+              throw $this->error = new Error("Request headers are not well formed", self::ERR_HEADERS_MALFORMED);
+            }
             $key = \substr($line, 0, $posKey);
             $value = \substr($line, $posKey+1);
             $this->head[Http::toField(\trim($key))] = \trim($value);
-          } else {
+          }
+          else {
             $this->head_done = true;
             break;
           }

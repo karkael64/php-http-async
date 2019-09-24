@@ -34,11 +34,13 @@ if (!\class_exists("HttpServer\\ServerResponse")) {
         if ($this->error) throw $this->error;
         return $this->head_done ? $this->head : false;
       })->bindTo($this));
+      $this->head_prom->catch(function () {});
 
       $this->body_prom = Promise::async((function () {
         if ($this->error) throw $this->error;
         return $this->body_done ? $this->raw : false;
       })->bindTo($this));
+      $this->body_prom->catch(function () {});
     }
 
 
